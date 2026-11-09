@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-navy-950 font-sans text-slate-200 antialiased;
+    background-image:
+      radial-gradient(1100px 600px at 12% -10%, rgba(16, 185, 129, 0.08), transparent 60%),
+      radial-gradient(900px 500px at 92% 0%, rgba(59, 130, 246, 0.06), transparent 55%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    @apply bg-emerald-400/25 text-white;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #23344d transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #23344d;
+    border-radius: 999px;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-white/[0.06] bg-navy-850/80 shadow-panel backdrop-blur-sm;
+  }
+  .panel-flat {
+    @apply rounded-xl border border-white/[0.06] bg-navy-900/60;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-emerald-400 px-4 py-2.5 text-navy-950 hover:bg-emerald-300;
+  }
+  .btn-secondary {
+    @apply btn border border-white/10 bg-white/[0.04] px-4 py-2.5 text-slate-200 hover:bg-white/[0.08];
+  }
+  .btn-ghost {
+    @apply btn px-3 py-2 text-slate-300 hover:bg-white/5 hover:text-white;
+  }
+  .btn-danger {
+    @apply btn bg-red-500/90 px-4 py-2.5 text-white hover:bg-red-500;
+  }
+  .btn-amber {
+    @apply btn bg-amber-400 px-4 py-2.5 text-navy-950 hover:bg-amber-300;
+  }
+  .input {
+    @apply w-full rounded-lg border border-white/10 bg-navy-950/60 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-400/60 focus:outline-none focus:ring-2 focus:ring-emerald-400/15;
+  }
+  .label {
+    @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300;
+  }
+  .table-head {
+    @apply text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500;
+  }
+  .table-cell {
+    @apply border-t border-white/[0.05] py-3.5 pr-4 align-middle text-sm text-slate-300;
+  }
+  .link {
+    @apply text-emerald-300 underline-offset-4 transition-colors hover:text-emerald-200 hover:underline;
+  }
+  .stat-value {
+    @apply font-mono text-2xl font-medium tracking-tight text-white;
+  }
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.hero-grid {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 65% at 50% 0%, black 40%, transparent 100%);
+}
