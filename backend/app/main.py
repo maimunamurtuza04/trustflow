@@ -6,10 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin, ai_routes, auth, dashboards, donations, projects, purchases, vendors
+from app.api import admin, ai_routes, auth, dashboards, donations, onboarding, projects, purchases, security, vendors
 from app.config import settings
 from app.database import engine
 from app.models import Base
+from app.services.psp import provider_summary
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -44,16 +45,24 @@ app.include_router(vendors.router)
 app.include_router(dashboards.router)
 app.include_router(admin.router)
 app.include_router(ai_routes.router)
+app.include_router(security.router)
+app.include_router(onboarding.router)
 
 
 @app.get("/api/health")
 def health():
+    provider = provider_summary()
     return {
         "status": "ok",
         "app": settings.app_name,
         "ai_provider_configured": settings.ai_enabled,
-        "payments": "simulated",
-        "notice": "Simulated restricted balances and vendor settlement. No real money moves in this prototype.",
+        "payments": provider["name"],
+        "payments_simulated": provider["simulated"],
+        "notice": (
+            "Simulated restricted balances and vendor settlement. No real money moves in this prototype."
+            if provider["simulated"]
+            else "A payment provider is configured. Restricted balances still derive from the project ledger."
+        ),
     }
 
 

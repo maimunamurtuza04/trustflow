@@ -74,4 +74,6 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: "POST", body: data === undefined ? undefined : JSON.stringify(data) }),
+  put: <T>(path: string, data?: unknown) =>
+    request<T>(path, { method: "PUT", body: data === undefined ? undefined : JSON.stringify(data) }),
 };

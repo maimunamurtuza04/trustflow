@@ -15,6 +15,7 @@ import NewProject from "./pages/NewProject";
 import NewPurchase from "./pages/NewPurchase";
 import PurchaseDetail from "./pages/PurchaseDetail";
 import AuditLog from "./pages/AuditLog";
+import Security from "./pages/Security";
 import NotFound from "./pages/NotFound";
 
 function FullScreenLoading() {
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="/projects" element={<BrowseProjects />} />
         <Route path="/projects/:id" element={<ProjectDetail />} />
         <Route path="/purchases/:id" element={<PurchaseDetail />} />
+        <Route path="/security" element={<Security />} />
         <Route path="/audit" element={<RoleGuard roles={["admin"]} />}>
           <Route index element={<AuditLog />} />
         </Route>

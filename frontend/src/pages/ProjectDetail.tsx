@@ -33,6 +33,7 @@ import type { Project } from "../lib/types";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { PageHeader } from "../components/Layout";
+import { PageOverview, PageSection, SectionNav, type PageSection as PageSectionMeta } from "../components/PageFrame";
 import { DonateModal } from "../components/DonateModal";
 import {
   EmptyState,
@@ -127,6 +128,22 @@ export default function ProjectDetail() {
     Committed: (line.committed_minor ?? 0) / 100,
   }));
 
+  const sections: PageSectionMeta[] = [
+    { id: "summary", label: "Position", hint: "Restricted balance, reservation and paid totals for this project." },
+    { id: "budget", label: "Budget", hint: "Approved category lines and the spend committed against them." },
+    { id: "procurement", label: "Procurement", hint: "Purchase requests and the engine's decision on each." },
+    ...(canSeeLedger ? [{ id: "ledger", label: "Ledger", hint: "Append-only movements that produce the balances." }] : []),
+    { id: "funding", label: "Funding", hint: "Donations received and the funding target." },
+    ...(policies.length > 0 ? [{ id: "governance", label: "Governance", hint: "Policy versions, approvals and verification state." }] : []),
+  ];
+  const nextAction = isOwner
+    ? data.policy
+      ? "Submit a purchase request against an approved budget line. The engine evaluates it before any money moves."
+      : "Submit a spending policy for administrator approval — the project cannot spend until a policy is approved."
+    : user?.role === "donor"
+      ? "Donate to lock funds to this project's purpose, then follow each authorised purchase below."
+      : "Review the budget lines, procurement history and ledger to confirm how funds moved.";
+
   return (
     <>
       <PageHeader
@@ -136,12 +153,12 @@ export default function ProjectDetail() {
         actions={
           <>
             {isOwner ? (
-              <Link to={`/projects/${data.id}/purchase/new`} className="btn-primary">
+              <Link to={`/projects/${data.id}/purchase/new`} className="btn-primary" data-tour="primary-action">
                 <Wallet className="h-4 w-4" /> Request purchase
               </Link>
             ) : null}
             {user?.role === "donor" ? (
-              <button className="btn-primary" onClick={() => setDonateOpen(true)}>
+              <button className="btn-primary" data-tour="primary-action" onClick={() => setDonateOpen(true)}>
                 <Landmark className="h-4 w-4" /> Donate
               </button>
             ) : null}
@@ -170,7 +187,20 @@ export default function ProjectDetail() {
         </span>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <PageOverview
+        intro={
+          <>
+            This transparency view shows exactly where this project's money is. Donations become a restricted balance
+            when confirmed; funds are reserved when a purchase passes the engine, and settle to the supplier's verified
+            payout reference. Nothing here can be withdrawn by the organisation.
+          </>
+        }
+        nextAction={nextAction}
+        sections={sections}
+      />
+      <SectionNav sections={sections} />
+
+      <PageSection id="summary" tour="kpis" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Restricted received"
           value={money(financials.received_minor, data.currency)}
@@ -181,7 +211,7 @@ export default function ProjectDetail() {
         <StatCard label="Available" value={money(financials.available_minor, data.currency)} hint="Unreserved restricted balance" icon={Wallet} />
         <StatCard label="Reserved" value={money(financials.reserved_minor, data.currency)} hint="Authorised, awaiting settlement" icon={LockKeyhole} tone="amber" />
         <StatCard label="Paid to vendors" value={money(financials.paid_minor, data.currency)} hint="Simulated vendor settlement" icon={BadgeCheck} />
-      </div>
+      </PageSection>
 
       <div className="mt-4 panel p-5">
         <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
@@ -224,7 +254,7 @@ export default function ProjectDetail() {
       ) : null}
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className="panel p-5 sm:p-6">
+        <section id="budget" className="panel scroll-mt-28 p-5 sm:p-6">
           <SectionHeading
             eyebrow="Approved budget"
             title="Category allocation"
@@ -364,7 +394,7 @@ export default function ProjectDetail() {
         </aside>
       </div>
 
-      <section className="mt-8">
+      <section id="procurement" className="mt-8 scroll-mt-28">
         <SectionHeading
           eyebrow="Procurement"
           title="Purchase requests"
@@ -432,7 +462,7 @@ export default function ProjectDetail() {
       </section>
 
       {canSeeLedger ? (
-        <section className="mt-8">
+        <section id="ledger" className="mt-8 scroll-mt-28">
           <SectionHeading
             eyebrow="Append-only ledger"
             title="Financial events"
@@ -485,7 +515,7 @@ export default function ProjectDetail() {
         </section>
       ) : null}
 
-      <section className="mt-8">
+      <section id="funding" className="mt-8 scroll-mt-28">
         <SectionHeading
           eyebrow="Funding"
           title={user?.role === "donor" ? "Your contributions" : "Project donations"}
@@ -536,7 +566,7 @@ export default function ProjectDetail() {
       </section>
 
       {policies.length > 0 ? (
-        <section className="mt-8">
+        <section id="governance" className="mt-8 scroll-mt-28">
           <SectionHeading
             eyebrow="Governance"
             title="Policy version history"

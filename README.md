@@ -16,7 +16,7 @@ This prototype was built for a hackathon. **All donations and vendor settlements
 | Database | SQLite by default; Postgres-ready through `DATABASE_URL` |
 | AI | OpenAI-compatible chat-completions adapter with an honest "unavailable" fallback |
 | UI | React 18, TypeScript, Vite 5, Tailwind CSS 3, React Router 6, Recharts, Lucide |
-| Tests | pytest + FastAPI TestClient (22 tests) |
+| Tests | pytest + FastAPI TestClient (33 tests) |
 
 ## Quick start
 
@@ -107,7 +107,7 @@ Payment does not prove arrival, so delivery is a separate state machine on a set
 3. Each step appends evidence (`delivery_report`, `receipt_confirmation`, `receipt_dispute`) and audit events; payment confirmation remains a separate record.
 4. Vendor delivery performance is derived from confirmed vs. disputed receipts — the stored demo value is no longer used. A vendor with no reviewed deliveries reports `null`, not a fabricated percentage.
 
-Both actions are role- and ownership-checked, require a settled purchase, and are terminal once receipt is recorded.
+Both actions are role- and ownership-checked, require a settled purchase, and are terminal once receipt is recorded. In the UI they appear on the purchase page as the **Delivery and receipt** panel: the owning vendor reports dispatch or delivery, and the owning organisation confirms or disputes receipt. Other roles see the recorded delivery state read-only.
 
 ## Security controls
 
@@ -119,6 +119,30 @@ Both actions are role- and ownership-checked, require a settled purchase, and ar
 - Financial records and audit rows are never updated or deleted by the application.
 - Delivery reports are accepted only for settled purchases owned by the reporting vendor; only the owning organisation can accept or dispute receipt.
 - Payment confirmation is recorded as evidence, but **an invoice or receipt does not prove delivery**.
+
+## Trust Centre
+
+`/security` is an in-product summary of the security posture, served by `GET /api/security/posture` (authenticated). It is generated from `backend/app/api/security.py` so the page cannot drift from the code, and it shows four things:
+
+- **Enforced controls** — each with the code area that implements it (RBAC, append-only ledger, idempotent settlement, payout re-checks, rate limits, audit trail, provider seam).
+- **Simulated controls** — beneficiary verification, delivery verification and AI advice are labelled as simulated or advisory, not as guarantees.
+- **Open gaps** — MFA, session revocation, CSP/security headers, a shared rate-limit store, managed key rotation and an independent audit are listed as *not implemented*. The page does not claim production readiness.
+- **Rate limits and payment boundary** — the live limits per endpoint and the active provider mode (`simulated` today), including the `SIMDON-…` / `SIMPAY-…` reference formats.
+
+## Guided onboarding
+
+Each role has a skippable spotlight tour defined in `frontend/src/lib/tour.ts`. On the first sign-in for a role the screen dims, the current section is highlighted, and a card explains the workflow step by step. Users can finish, skip at any point (Esc), or replay later from the sidebar or the **Getting started** checklist. Progress is stored per account via `GET/PUT /api/onboarding/{tour_key}` (`not_started` → `in_progress` → `completed | skipped`), so a finished tour does not reappear, and replay resets it deliberately. The checklist stays visible until the role's real workflow actions are present in the account's data.
+
+Every major page opens with the same structure (`frontend/src/components/PageFrame.tsx`): a plain-language overview band stating what the page contains, a next-action card, the checklist, and a sticky section nav that jumps to labelled sections.
+
+## Payment provider seam
+
+`backend/app/services/psp.py` defines one provider interface used by donations and settlement:
+
+- `SimulatedPaymentProvider` (default) produces deterministic `SIMDON-…` order references and `SIMPAY-…` payout references. It makes no network calls.
+- `PayPalPaymentProvider` implements the same interface against PayPal Orders v2, captures, Payouts v1 and webhook signature verification, using `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MODE` and `PAYPAL_WEBHOOK_ID`.
+
+Selecting `PAYMENTS_PROVIDER=paypal` without credentials raises `ProviderNotConfigured`; there is no silent fallback to simulation. The stored payment record keeps the provider name, provider reference, simulated flag and raw payload, so a later reconciliation can tell exactly which mode produced each record. The Trust Centre reads the active mode from `provider_summary()`.
 
 ## AI configuration
 
@@ -138,23 +162,23 @@ cd backend
 # source .venv/bin/activate && pytest -q  # macOS/Linux
 ```
 
-Coverage includes approval/reservation/settlement, blocked categories, operational review, budget and funding limits, payout destination mismatch, duplicate detection, reviewer decisions, delivery/receipt transitions, derived vendor performance, policy versioning, vendor isolation and RBAC.
+Coverage includes approval/reservation/settlement, blocked categories, operational review, budget and funding limits, payout destination mismatch, duplicate detection, reviewer decisions, delivery/receipt transitions, derived vendor performance, policy versioning, vendor isolation and RBAC, plus payment-provider selection, security-posture contents and per-account onboarding state.
 
 ## Project structure
 
 ```
 backend/
   app/
-    api/            auth, projects, donations, purchases, vendors, dashboards, admin, ai
-    services/       authorization engine, ledger, payments, delivery, AI adapter, audit, rate limit
+    api/            auth, projects, donations, purchases, vendors, dashboards, admin, ai, security, onboarding
+    services/       authorization engine, ledger, payments, payment provider seam, delivery, AI adapter, audit, rate limit
     models.py       SQLAlchemy entities
     serializers.py  API payload builders
     seed.py         demo scenario
   tests/            engine + API tests
 frontend/
-  src/pages/        landing, auth, role dashboards, project/purchase flows, audit log
-  src/components/   layout, UI primitives, donation modal
-  src/lib/          API client, types, formatting, hooks
+  src/pages/        landing, auth, role dashboards, project/purchase flows, audit log, Trust Centre
+  src/components/   layout, page frame, onboarding tour, UI primitives, donation modal
+  src/lib/          API client, types, formatting, hooks, tour definitions
 ```
 
 ## Simulation disclosure
@@ -169,7 +193,7 @@ Real purpose-restricted disbursement requires an authorised payment service prov
 
 ## Known limitations / next steps
 
-- Replace simulated payments with a real PSP integration (webhooks, reconciliation, refunds).
+- Replace simulated payments with a live PSP integration (webhooks, reconciliation, refunds); the provider seam and PayPal adapter exist, but no live credentials are configured or tested here.
 - Add delivery-document uploads and an administrator dispute-resolution workflow.
 - Postgres migrations (Alembic) instead of `create_all`.
 - Email verification, password reset and MFA.

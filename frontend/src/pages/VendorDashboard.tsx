@@ -14,6 +14,8 @@ import { formatDate, money } from "../lib/format";
 import type { VendorOverview } from "../lib/types";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/Layout";
+import { PageOverview, PageSection, SectionNav, type PageSection as PageSectionMeta } from "../components/PageFrame";
+import { TourOverlay, useOnboarding } from "../components/OnboardingTour";
 import {
   EmptyState,
   InfoNote,
@@ -26,6 +28,7 @@ import {
 export default function VendorDashboard() {
   const { user } = useAuth();
   const { data, loading, error } = useApi<VendorOverview>("/vendor/overview");
+  const tour = useOnboarding("vendor");
 
   if (loading && !data) {
     return (
@@ -49,6 +52,19 @@ export default function VendorDashboard() {
 
   const { vendor, stats } = data;
 
+  const sections: PageSectionMeta[] = [
+    { id: "summary", label: "At a glance", hint: "Requests received, open orders, paid orders and settled value." },
+    { id: "requests", label: "Purchase requests", hint: "Every request naming your business and the engine's decision." },
+    { id: "profile", label: "Business profile", hint: "Registration details, performance and payout destination." },
+    { id: "listings", label: "Listings", hint: "Products organisations can reference when requesting a purchase." },
+  ];
+  const nextAction =
+    stats.paid_orders > 0
+      ? "Open a paid request to report dispatch and delivery. The organisation confirms receipt, and that receipt is recorded as evidence."
+      : stats.open_orders > 0
+        ? "Requests are still awaiting authorization or payment. You will be notified here once an order is paid."
+        : "Nothing to fulfil yet. Requests appear here as soon as an organisation names your business.";
+
   return (
     <>
       <PageHeader
@@ -65,19 +81,38 @@ export default function VendorDashboard() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <PageOverview
+        intro={
+          <>
+            This console shows the purchase requests that name your business, the amount held for each, and the payout
+            reference the platform will settle to. You see only your own orders — never project funds or other
+            suppliers.
+          </>
+        }
+        nextAction={nextAction}
+        sections={sections}
+        checklist={[
+          { label: "Get verified by the platform", done: vendor.verification_status === "verified" },
+          { label: "Have your payout reference verified", done: vendor.payment_destination_verified },
+          { label: "Receive your first purchase request", done: stats.orders_total > 0 },
+          { label: "Report a delivery", done: (vendor.delivery_metrics?.reported ?? 0) > 0 },
+        ]}
+      />
+      <SectionNav sections={sections} />
+
+      <PageSection id="summary" tour="kpis" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Requests received" value={stats.orders_total} hint="Purchase requests naming this supplier" icon={ClipboardList} />
         <StatCard label="Open requests" value={stats.open_orders} hint="Authorised, in review or awaiting information" icon={Truck} tone="amber" />
         <StatCard label="Paid orders" value={stats.paid_orders} hint="Simulated settlement completed" icon={PackageCheck} tone="green" />
         <StatCard label="Settled value" value={money(stats.settled_minor)} hint="Paid to your verified payout reference" icon={Banknote} />
-      </div>
+      </PageSection>
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
-        <section>
+        <PageSection id="requests" tour="purchase-requests">
           <SectionHeading
             eyebrow="Fulfilment"
             title="Purchase requests"
-            description="Every request naming your business is listed with its engine decision. Only authorised or paid requests can settle — a blocked request is not an order."
+            description="Every request naming your business is listed with its engine decision. Only authorised or paid requests can settle — a blocked request is not an order. Open a paid request to report dispatch and delivery."
           />
           {data.orders.length === 0 ? (
             <EmptyState
@@ -119,10 +154,10 @@ export default function VendorDashboard() {
               </div>
             </div>
           )}
-        </section>
+        </PageSection>
 
         <aside className="space-y-5">
-          <div className="panel p-5">
+          <div id="profile" className="panel scroll-mt-28 p-5">
             <p className="flex items-center gap-2 text-sm font-medium text-white">
               <Store className="h-4 w-4 text-emerald-400" />
               Business profile
@@ -159,7 +194,7 @@ export default function VendorDashboard() {
             </div>
           </div>
 
-          <div className="panel p-5">
+          <div id="listings" className="panel scroll-mt-28 p-5">
             <p className="flex items-center gap-2 text-sm font-medium text-white">
               <Boxes className="h-4 w-4 text-emerald-400" />
               Product listings
@@ -192,6 +227,14 @@ export default function VendorDashboard() {
         <BadgeCheck className="h-3.5 w-3.5" />
         You can only see purchase requests that name your business. Project funds remain restricted to their purpose.
       </div>
+
+      <TourOverlay
+        steps={tour.steps}
+        open={tour.open}
+        onFinish={tour.finish}
+        onSkip={tour.skip}
+        onProgress={tour.progress}
+      />
     </>
   );
 }

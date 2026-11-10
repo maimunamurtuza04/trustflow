@@ -141,3 +141,8 @@ class ProjectRequirementsIn(BaseModel):
     project_category: str | None = Field(default=None, max_length=100)
     target_beneficiaries: int | None = Field(default=None, ge=1)
     budget_minor: int | None = Field(default=None, gt=0)
+
+
+class OnboardingUpdateIn(BaseModel):
+    status: Literal["in_progress", "completed", "skipped"]
+    current_step: int = Field(default=0, ge=0, le=50)

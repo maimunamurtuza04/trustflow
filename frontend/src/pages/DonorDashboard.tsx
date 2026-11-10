@@ -28,6 +28,8 @@ import type { Donation, DonorOverview } from "../lib/types";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { PageHeader } from "../components/Layout";
+import { PageOverview, PageSection, SectionNav, type PageSection as PageSectionMeta } from "../components/PageFrame";
+import { TourOverlay, useOnboarding } from "../components/OnboardingTour";
 import { DonateModal } from "../components/DonateModal";
 import {
   EmptyState,
@@ -62,6 +64,7 @@ export default function DonorDashboard() {
   const { user } = useAuth();
   const toast = useToast();
   const { data, loading, error, reload } = useApi<DonorOverview>("/donor/overview");
+  const tour = useOnboarding("donor");
   const [donateTo, setDonateTo] = useState<DonorOverview["projects"][number] | null>(null);
   const [confirming, setConfirming] = useState<number | null>(null);
 
@@ -107,6 +110,19 @@ export default function DonorDashboard() {
     Available: project.financials.available_minor / 100,
   }));
 
+  const sections: PageSectionMeta[] = [
+    { id: "summary", label: "Giving summary", hint: "Confirmed donations, projects funded and restricted money still unspent." },
+    { id: "allocation", label: "Allocation", hint: "How funded projects split money between paid, reserved and available." },
+    { id: "donations", label: "Donation history", hint: "Every pledge, its simulated reference and confirmation state." },
+    { id: "projects", label: "Funded projects", hint: "Progress, balances and the ability to contribute again." },
+    { id: "purchases", label: "Verified spending", hint: "Authorised vendor purchases from the projects you funded." },
+  ];
+  const nextAction = pledged.length > 0
+    ? `${pledged.length} pledge${pledged.length === 1 ? "" : "s"} await simulated payment confirmation. Pledged money is not part of the restricted balance until confirmed.`
+    : data.projects.length === 0
+      ? "Fund a project to start a restricted balance."
+      : "Open a funded project's transparency view to follow money from donation to vendor settlement.";
+
   return (
     <>
       <PageHeader
@@ -114,14 +130,35 @@ export default function DonorDashboard() {
         title="My giving"
         description="Every contribution is locked to a project purpose. Follow it from donation, through the authorization engine, to vendor settlement and recorded evidence."
         actions={
-          <Link to="/projects" className="btn-primary">
+          <Link to="/projects" className="btn-primary" data-tour="primary-action">
             <HandCoins className="h-4 w-4" />
             Fund a project
           </Link>
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <PageOverview
+        intro={
+          <>
+            This is your giving position across every project you have funded. Donations arrive as pledges, become
+            restricted balances once the simulated payment is confirmed, and can only leave through purchases that pass
+            the deterministic authorization engine.
+          </>
+        }
+        nextAction={nextAction}
+        sections={sections}
+        checklist={[
+          { label: "Fund a project", done: data.donations.length > 0 },
+          {
+            label: "Confirm a simulated donation",
+            done: data.donations.some((donation) => donation.payment_status === "confirmed"),
+          },
+          { label: "Follow an authorised purchase", done: data.purchases.length > 0 },
+        ]}
+      />
+      <SectionNav sections={sections} />
+
+      <PageSection id="summary" tour="kpis" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total donated"
           value={money(stats.confirmed_donated_minor)}
@@ -147,7 +184,7 @@ export default function DonorDashboard() {
           hint="Available for future authorised purchases"
           icon={LockKeyhole}
         />
-      </div>
+      </PageSection>
 
       {pledged.length > 0 ? (
         <div className="mt-6">
@@ -167,7 +204,7 @@ export default function DonorDashboard() {
         </div>
       ) : null}
 
-      <div className="mt-8 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+      <PageSection id="allocation" className="mt-8 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <section className="panel p-5 sm:p-6">
           <SectionHeading
             eyebrow="Allocation"
@@ -224,9 +261,9 @@ export default function DonorDashboard() {
             <InfoNote>{data.attribution_note}</InfoNote>
           </div>
         </section>
-      </div>
+      </PageSection>
 
-      <section className="mt-8">
+      <PageSection id="donations" className="mt-8">
         <SectionHeading
           eyebrow="Your contributions"
           title="Donation history"
@@ -302,9 +339,9 @@ export default function DonorDashboard() {
             </div>
           </div>
         )}
-      </section>
+      </PageSection>
 
-      <section className="mt-8">
+      <PageSection id="projects" className="mt-8">
         <SectionHeading
           eyebrow="Impact"
           title="Funded projects"
@@ -362,9 +399,9 @@ export default function DonorDashboard() {
             ))}
           </div>
         )}
-      </section>
+      </PageSection>
 
-      <section className="mt-8">
+      <PageSection id="purchases" className="mt-8">
         <SectionHeading
           eyebrow="Expenditure"
           title="Authorised purchases"
@@ -407,7 +444,7 @@ export default function DonorDashboard() {
             </div>
           </div>
         )}
-      </section>
+      </PageSection>
 
       <div className="mt-6 flex items-center gap-2 text-[11px] text-slate-600">
         <ShieldCheck className="h-3.5 w-3.5" />
@@ -419,6 +456,14 @@ export default function DonorDashboard() {
         open={Boolean(donateTo)}
         onClose={() => setDonateTo(null)}
         onComplete={reload}
+      />
+
+      <TourOverlay
+        steps={tour.steps}
+        open={tour.open}
+        onFinish={tour.finish}
+        onSkip={tour.skip}
+        onProgress={tour.progress}
       />
     </>
   );

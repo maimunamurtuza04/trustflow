@@ -384,3 +384,19 @@ class AIAssessment(Base):
     confidence: Mapped[Optional[float]] = mapped_column(Float)
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class OnboardingState(Base):
+    """Per-account tour progress. One row per user and tour key."""
+
+    __tablename__ = "onboarding_states"
+    __table_args__ = (UniqueConstraint("user_id", "tour_key", name="uq_onboarding_user_tour"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    tour_key: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(20), default="not_started")  # not_started | in_progress | completed | skipped
+    current_step: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)

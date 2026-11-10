@@ -190,6 +190,21 @@ export interface Evidence {
   verified_at?: string | null;
 }
 
+export interface Delivery {
+  status: string;
+  dispatch_reference: string;
+  dispatched_at?: string | null;
+  delivered_at?: string | null;
+  quantity_reported?: number | null;
+  quantity_received?: number | null;
+  notes?: string | null;
+  receipt_notes?: string | null;
+  acknowledged: boolean;
+  reported_at?: string | null;
+  receipt_confirmed_at?: string | null;
+  receipt_confirmed_by?: number | null;
+}
+
 export interface Purchase {
   id: number;
   category: string;
@@ -212,6 +227,7 @@ export interface Purchase {
   payment?: Payment | null;
   ai_relevance?: AIAssessment | null;
   ai_explanation?: AIAssessment | null;
+  delivery?: Delivery | null;
   evidence?: Evidence[];
 }
 
@@ -341,4 +357,47 @@ export interface RequirementsResponse {
     summary?: string;
     requirements?: RequirementSuggestion[];
   };
+}
+
+export interface SecurityControl {
+  area: string;
+  title: string;
+  detail: string;
+  evidence: string;
+}
+
+export interface SecurityBoundary {
+  title: string;
+  detail: string;
+}
+
+export interface SecurityGap {
+  title: string;
+  detail: string;
+}
+
+export interface SecurityRateLimit {
+  endpoint: string;
+  limit: string;
+}
+
+export interface SecurityPosture {
+  summary: {
+    enforced_controls: number;
+    simulated_boundaries: number;
+    open_gaps: number;
+    session_minutes: number;
+    role_scope: string;
+  };
+  payments: {
+    mode: string;
+    reference_prefixes: string[];
+    real_payments: boolean;
+    note: string;
+  };
+  enforced: SecurityControl[];
+  simulated: SecurityBoundary[];
+  not_implemented: SecurityGap[];
+  rate_limits: SecurityRateLimit[];
+  statement: string;
 }

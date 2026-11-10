@@ -19,6 +19,8 @@ import { formatDate, money } from "../lib/format";
 import type { AdminOverview, Organisation, Vendor } from "../lib/types";
 import { useToast } from "../context/ToastContext";
 import { PageHeader } from "../components/Layout";
+import { PageOverview, PageSection, SectionNav, type PageSection as PageSectionMeta } from "../components/PageFrame";
+import { TourOverlay, useOnboarding } from "../components/OnboardingTour";
 import {
   EmptyState,
   InfoNote,
@@ -36,6 +38,7 @@ type VerifyTarget =
 export default function AdminDashboard() {
   const toast = useToast();
   const { data, loading, error, reload } = useApi<AdminOverview>("/admin/overview");
+  const tour = useOnboarding("admin");
   const [approving, setApproving] = useState<number | null>(null);
   const [verifyTarget, setVerifyTarget] = useState<VerifyTarget | null>(null);
   const [verifyAction, setVerifyAction] = useState<"verified" | "rejected" | "suspended">("verified");
@@ -132,6 +135,22 @@ export default function AdminDashboard() {
 
   const { stats } = data;
 
+  const sections: PageSectionMeta[] = [
+    { id: "summary", label: "Oversight summary", hint: "Review queue, policy approvals, verification backlog and active projects." },
+    { id: "review", label: "Escalated purchases", hint: "Requests the engine would not decide — resolved by a human, with notes." },
+    { id: "policies", label: "Policy approvals", hint: "Spending policies that cannot take effect until you approve them." },
+    { id: "registries", label: "Verification registry", hint: "Organisation and supplier verification plus payout destinations." },
+    { id: "audit", label: "Audit trail", hint: "The most recent append-only financial and administrative events." },
+  ];
+  const nextAction =
+    stats.review_queue > 0
+      ? `${stats.review_queue} purchase request${stats.review_queue === 1 ? "" : "s"} await a human decision. Amounts stay reserved until you approve or reject.`
+      : stats.pending_policies > 0
+        ? `${stats.pending_policies} policy version${stats.pending_policies === 1 ? "" : "s"} await approval before projects can spend.`
+        : stats.pending_organisations + stats.pending_vendors > 0
+          ? "Unverified organisations and suppliers cannot transact. Review their documents in the verification registry."
+          : "Nothing is blocked. Open the audit trail to confirm recent financial activity.";
+
   return (
     <>
       <PageHeader
@@ -146,7 +165,40 @@ export default function AdminDashboard() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <PageOverview
+        intro={
+          <>
+            This console is the platform's control room. You are the only role that can resolve purchases the
+            deterministic engine escalated, approve the policy versions that authorise spending, and verify the
+            identities behind organisations and suppliers.
+          </>
+        }
+        nextAction={nextAction}
+        sections={sections}
+        checklist={[
+          {
+            label: "Approve a spending policy",
+            done: data.recent_audit.some((entry) => entry.action === "policy.approved"),
+          },
+          {
+            label: "Resolve an escalated request",
+            done: data.recent_audit.some(
+              (entry) => entry.action === "purchase.review_approved" || entry.action === "purchase.review_rejected",
+            ),
+          },
+          {
+            label: "Verify an organisation",
+            done: data.organisations.some((organisation) => organisation.verification_status === "verified"),
+          },
+          {
+            label: "Verify a supplier payout reference",
+            done: data.vendors.some((vendor) => vendor.payment_destination_verified),
+          },
+        ]}
+      />
+      <SectionNav sections={sections} />
+
+      <PageSection id="summary" tour="kpis" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Review queue"
           value={stats.review_queue}
@@ -168,9 +220,9 @@ export default function AdminDashboard() {
           icon={ClipboardCheck}
         />
         <StatCard label="Active projects" value={stats.active_projects} hint={`${stats.users} registered users`} icon={Landmark} />
-      </div>
+      </PageSection>
 
-      <section className="mt-8">
+      <PageSection id="review" tour="review-queue" className="mt-8">
         <SectionHeading
           eyebrow="Human review"
           title="Escalated purchases"
@@ -202,9 +254,9 @@ export default function AdminDashboard() {
             ))}
           </div>
         )}
-      </section>
+      </PageSection>
 
-      <section className="mt-8">
+      <PageSection id="policies" className="mt-8">
         <SectionHeading
           eyebrow="Policy governance"
           title="Pending spending policies"
@@ -253,9 +305,9 @@ export default function AdminDashboard() {
             ))}
           </div>
         )}
-      </section>
+      </PageSection>
 
-      <div className="mt-8 grid gap-5 xl:grid-cols-2">
+      <PageSection id="registries" className="mt-8 grid gap-5 xl:grid-cols-2">
         <section className="panel p-5">
           <SectionHeading
             eyebrow="Organisations"
@@ -359,9 +411,9 @@ export default function AdminDashboard() {
             ))}
           </div>
         </section>
-      </div>
+      </PageSection>
 
-      <section className="mt-8">
+      <PageSection id="audit" className="mt-8">
         <SectionHeading
           eyebrow="Immutable record"
           title="Recent audit events"
@@ -401,7 +453,7 @@ export default function AdminDashboard() {
             </table>
           </div>
         </div>
-      </section>
+      </PageSection>
 
       <Modal
         open={Boolean(verifyTarget)}
@@ -500,6 +552,14 @@ export default function AdminDashboard() {
           </InfoNote>
         </div>
       </Modal>
+
+      <TourOverlay
+        steps={tour.steps}
+        open={tour.open}
+        onFinish={tour.finish}
+        onSkip={tour.skip}
+        onProgress={tour.progress}
+      />
     </>
   );
 }

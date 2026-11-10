@@ -18,6 +18,8 @@ import { formatDate, money, shortDate } from "../lib/format";
 import type { OrgOverview } from "../lib/types";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/Layout";
+import { PageOverview, PageSection, SectionNav, type PageSection as PageSectionMeta } from "../components/PageFrame";
+import { TourOverlay, useOnboarding } from "../components/OnboardingTour";
 import {
   EmptyState,
   InfoNote,
@@ -31,6 +33,7 @@ import {
 export default function OrgDashboard() {
   const { user } = useAuth();
   const { data, loading, error } = useApi<OrgOverview>("/org/overview");
+  const tour = useOnboarding("organisation");
 
   if (loading && !data) {
     return (
@@ -72,6 +75,25 @@ export default function OrgDashboard() {
   const firstProject = data.projects[0];
   const purchaseHref = firstProject ? `/projects/${firstProject.id}/purchase/new` : "/projects/new";
 
+  const firstPending = data.pending_policies[0];
+  const sections: PageSectionMeta[] = [
+    { id: "funds", label: "Restricted funds", hint: "Received, available, reserved and paid balances for your projects." },
+    ...(firstPending
+      ? [{ id: "approvals", label: "Approval queue", hint: "Policy versions waiting for an administrator." }]
+      : []),
+    { id: "projects", label: "Projects", hint: "Per-project ledger balances, funding progress and binding policy." },
+    { id: "procurement", label: "Purchase requests", hint: "Every request you submitted and the engine's decision." },
+  ];
+  const nextAction = firstPending
+    ? `Policy v${firstPending.version} for ${firstPending.project.name} is waiting for administrator approval. The previous approved policy remains binding until then.`
+    : stats.review_required > 0
+      ? `${stats.review_required} request${stats.review_required === 1 ? "" : "s"} sit in human review. No funds are reserved until an administrator decides.`
+      : stats.awaiting_payment > 0
+        ? `${stats.awaiting_payment} authorised request${stats.awaiting_payment === 1 ? "" : "s"} await simulated settlement to the verified vendor.`
+        : data.projects.length === 0
+          ? "Create a project, define its spending policy and submit it for administrator approval."
+          : "Open a paid purchase to record receipt, or submit a new request against an approved policy.";
+
   return (
     <>
       <PageHeader
@@ -94,13 +116,35 @@ export default function OrgDashboard() {
               <FolderPlus className="h-4 w-4" />
               New project
             </Link>
-            <Link to={purchaseHref} className="btn-primary">
+            <Link to={purchaseHref} className="btn-primary" data-tour="primary-action">
               <ShieldCheck className="h-4 w-4" />
               Submit a purchase
             </Link>
           </>
         }
       />
+
+      <PageOverview
+        intro={
+          <>
+            This console is your organisation&rsquo;s restricted-funds position and procurement trail. You cannot withdraw
+            money: every rupee leaves through a purchase request that the deterministic engine authorises and settles to a
+            verified vendor.
+          </>
+        }
+        nextAction={nextAction}
+        sections={sections}
+        checklist={[
+          { label: "Create a project", done: data.projects.length > 0 },
+          { label: "Get a spending policy approved", done: data.projects.some((project) => Boolean(project.policy)) },
+          { label: "Submit a purchase request", done: data.purchases.length > 0 },
+          {
+            label: "Settle an authorised request",
+            done: data.purchases.some((purchase) => purchase.status === "paid"),
+          },
+        ]}
+      />
+      <SectionNav sections={sections} />
 
       {organisation.verification_status !== "verified" ? (
         <div className="mb-6 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-sm text-amber-100">
@@ -115,34 +159,36 @@ export default function OrgDashboard() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Restricted funds received" value={money(stats.received_minor)} hint="Confirmed donations only" icon={Landmark} tone="green" />
-        <StatCard label="Available to spend" value={money(stats.available_minor)} hint="Subject to approved policy and budget lines" icon={Wallet} />
-        <StatCard label="Reserved for settlement" value={money(stats.reserved_minor)} hint="Authorised, not yet paid" icon={Clock3} tone="amber" />
-        <StatCard label="Paid to vendors" value={money(stats.paid_minor)} hint="Settled directly to verified suppliers" icon={Receipt} />
-      </div>
+      <PageSection id="funds" tour="kpis">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Restricted funds received" value={money(stats.received_minor)} hint="Confirmed donations only" icon={Landmark} tone="green" />
+          <StatCard label="Available to spend" value={money(stats.available_minor)} hint="Subject to approved policy and budget lines" icon={Wallet} />
+          <StatCard label="Reserved for settlement" value={money(stats.reserved_minor)} hint="Authorised, not yet paid" icon={Clock3} tone="amber" />
+          <StatCard label="Paid to vendors" value={money(stats.paid_minor)} hint="Settled directly to verified suppliers" icon={Receipt} />
+        </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="panel-flat flex items-center justify-between px-4 py-3">
-          <span className="text-xs text-slate-400">Active projects</span>
-          <span className="font-mono text-lg text-white">{stats.active_projects}</span>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="panel-flat flex items-center justify-between px-4 py-3">
+            <span className="text-xs text-slate-400">Active projects</span>
+            <span className="font-mono text-lg text-white">{stats.active_projects}</span>
+          </div>
+          <div className="panel-flat flex items-center justify-between px-4 py-3">
+            <span className="text-xs text-slate-400">Purchases needing review</span>
+            <span className={`font-mono text-lg ${stats.review_required ? "text-amber-300" : "text-white"}`}>{stats.review_required}</span>
+          </div>
+          <div className="panel-flat flex items-center justify-between px-4 py-3">
+            <span className="text-xs text-slate-400">Authorised, awaiting payment</span>
+            <span className={`font-mono text-lg ${stats.awaiting_payment ? "text-sky-300" : "text-white"}`}>{stats.awaiting_payment}</span>
+          </div>
+          <div className="panel-flat flex items-center justify-between px-4 py-3">
+            <span className="text-xs text-slate-400">Verified vendors available</span>
+            <span className="font-mono text-lg text-white">{stats.verified_vendors}</span>
+          </div>
         </div>
-        <div className="panel-flat flex items-center justify-between px-4 py-3">
-          <span className="text-xs text-slate-400">Purchases needing review</span>
-          <span className={`font-mono text-lg ${stats.review_required ? "text-amber-300" : "text-white"}`}>{stats.review_required}</span>
-        </div>
-        <div className="panel-flat flex items-center justify-between px-4 py-3">
-          <span className="text-xs text-slate-400">Authorised, awaiting payment</span>
-          <span className={`font-mono text-lg ${stats.awaiting_payment ? "text-sky-300" : "text-white"}`}>{stats.awaiting_payment}</span>
-        </div>
-        <div className="panel-flat flex items-center justify-between px-4 py-3">
-          <span className="text-xs text-slate-400">Verified vendors available</span>
-          <span className="font-mono text-lg text-white">{stats.verified_vendors}</span>
-        </div>
-      </div>
+      </PageSection>
 
       {data.pending_policies.length > 0 ? (
-        <section className="mt-8">
+        <PageSection id="approvals" className="mt-8">
           <SectionHeading
             eyebrow="Approval queue"
             title="Policies awaiting administrator approval"
@@ -168,10 +214,10 @@ export default function OrgDashboard() {
               </div>
             ))}
           </div>
-        </section>
+        </PageSection>
       ) : null}
 
-      <section className="mt-8">
+      <PageSection id="projects" className="mt-8">
         <SectionHeading
           eyebrow="Restricted balances"
           title="Projects"
@@ -266,10 +312,10 @@ export default function OrgDashboard() {
             ))}
           </div>
         )}
-      </section>
+      </PageSection>
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
-        <section>
+        <PageSection id="procurement" tour="procurement">
           <SectionHeading
             eyebrow="Procurement"
             title="Purchase requests"
@@ -320,7 +366,7 @@ export default function OrgDashboard() {
               </div>
             </div>
           )}
-        </section>
+        </PageSection>
 
         <aside className="space-y-5">
           <div className="panel p-5">
@@ -365,6 +411,14 @@ export default function OrgDashboard() {
         <BadgeCheck className="h-3.5 w-3.5" />
         Policy changes are versioned and audited. Approved versions are immutable.
       </div>
+
+      <TourOverlay
+        steps={tour.steps}
+        open={tour.open}
+        onFinish={tour.finish}
+        onSkip={tour.skip}
+        onProgress={tour.progress}
+      />
     </>
   );
 }

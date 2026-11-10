@@ -6,12 +6,15 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PlayCircle,
   ScrollText,
   ShieldCheck,
+  ShieldEllipsis,
   X,
 } from "lucide-react";
 import { dashboardPath, useAuth } from "../context/AuthContext";
 import { initials } from "../lib/format";
+import { requestTourReplay } from "./OnboardingTour";
 
 const NAV = {
   donor: [
@@ -32,11 +35,13 @@ const NAV = {
   ],
 };
 
+const SHARED_NAV = [{ to: "/security", label: "Trust Centre", icon: ShieldEllipsis }];
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const items = user ? NAV[user.role] ?? [] : [];
+  const items = user ? [...(NAV[user.role] ?? []), ...SHARED_NAV] : [];
 
   const handleLogout = () => {
     logout();
@@ -82,6 +87,18 @@ export function AppShell({ children }: { children: ReactNode }) {
         </button>
       </div>
       {nav}
+      {user ? (
+        <button
+          className="mb-3 flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-slate-200"
+          onClick={() => {
+            requestTourReplay();
+            navigate(dashboardPath(user.role));
+          }}
+        >
+          <PlayCircle className="h-4 w-4" />
+          Replay guided tour
+        </button>
+      ) : null}
       <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3">
         <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-200">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />

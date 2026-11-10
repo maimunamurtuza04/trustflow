@@ -26,6 +26,7 @@ import type { AICallResponse, Check, Purchase } from "../lib/types";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { PageHeader } from "../components/Layout";
+import { PageOverview, SectionNav, type PageSection as PageSectionMeta } from "../components/PageFrame";
 import {
   CheckList,
   EmptyState,
@@ -52,6 +53,11 @@ function parseReviewError(error: unknown): { message: string; checks: Check[] } 
   return { message: error instanceof Error ? error.message : "Unable to review this request.", checks: [] };
 }
 
+function localDateTimeInput(value: Date): string {
+  const offset = value.getTimezoneOffset() * 60000;
+  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
+}
+
 export default function PurchaseDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -63,6 +69,17 @@ export default function PurchaseDetail() {
   const [payKey, setPayKey] = useState<string | null>(null);
   const [payBusy, setPayBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState<"relevance" | "explanation" | null>(null);
+  const [deliveryMode, setDeliveryMode] = useState<"dispatch" | "delivered">("delivered");
+  const [dispatchReference, setDispatchReference] = useState("");
+  const [dispatchedAt, setDispatchedAt] = useState(() => localDateTimeInput(new Date()));
+  const [deliveredAt, setDeliveredAt] = useState(() => localDateTimeInput(new Date()));
+  const [reportedQuantity, setReportedQuantity] = useState("");
+  const [deliveryNotes, setDeliveryNotes] = useState("");
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [receiptDecision, setReceiptDecision] = useState<"confirmed" | "disputed">("confirmed");
+  const [receivedQuantity, setReceivedQuantity] = useState("");
+  const [receiptNotes, setReceiptNotes] = useState("");
+  const [receiptBusy, setReceiptBusy] = useState(false);
 
   if (loading && !data) {
     return (
@@ -94,11 +111,16 @@ export default function PurchaseDetail() {
 
   const isAdmin = user?.role === "admin";
   const isOrgOwner = user?.role === "organisation" && user.organisation?.id === data.organisation?.id;
+  const isVendorOwner = user?.role === "vendor" && user.vendor?.id === data.vendor?.id;
   const canReview = isAdmin && data.status === "review_required";
   const canPay = data.status === "authorised" && (isAdmin || isOrgOwner);
   const canUseAi = isAdmin || isOrgOwner;
   const decision = data.decision;
   const evidence = data.evidence ?? [];
+  const delivery = data.delivery ?? null;
+  const deliveryTerminal = delivery?.status === "confirmed" || delivery?.status === "disputed";
+  const canReportDelivery = isVendorOwner && data.status === "paid" && !deliveryTerminal;
+  const canConfirmReceipt = isOrgOwner && data.status === "paid" && delivery?.status === "delivered";
 
   const review = async (choice: "approve" | "reject") => {
     setReviewError(null);
@@ -151,6 +173,101 @@ export default function PurchaseDetail() {
     }
   };
 
+  const reportDelivery = async () => {
+    if (dispatchReference.trim().length < 3) {
+      toast.push("Enter a dispatch reference of at least 3 characters.", "error");
+      return;
+    }
+    const quantity = reportedQuantity.trim() ? Number(reportedQuantity) : undefined;
+    if (quantity !== undefined && (!Number.isInteger(quantity) || quantity < 1 || quantity > data.quantity)) {
+      toast.push(`Reported quantity must be a whole number between 1 and ${data.quantity}.`, "error");
+      return;
+    }
+    setDeliveryBusy(true);
+    try {
+      const body: Record<string, unknown> = { dispatch_reference: dispatchReference.trim() };
+      if (dispatchedAt) body.dispatched_at = new Date(dispatchedAt).toISOString();
+      if (deliveryMode === "delivered") {
+        body.delivered_at = deliveredAt ? new Date(deliveredAt).toISOString() : new Date().toISOString();
+      }
+      if (quantity !== undefined) body.quantity_reported = quantity;
+      if (deliveryNotes.trim()) body.notes = deliveryNotes.trim();
+      await api.post(`/purchase-requests/${data.id}/delivery`, body);
+      toast.push(
+        deliveryMode === "delivered"
+          ? "Delivery reported. The organisation must confirm or dispute receipt."
+          : "Dispatch recorded. Report delivery once the goods arrive.",
+        "success",
+      );
+      setDispatchReference("");
+      setReportedQuantity("");
+      setDeliveryNotes("");
+      reload();
+    } catch (err) {
+      toast.push(err instanceof Error ? err.message : "Delivery report failed.", "error");
+    } finally {
+      setDeliveryBusy(false);
+    }
+  };
+
+  const recordReceipt = async () => {
+    if (receiptDecision === "disputed" && receiptNotes.trim().length < 10) {
+      toast.push("A dispute requires notes of at least 10 characters.", "error");
+      return;
+    }
+    const quantity = receivedQuantity.trim() ? Number(receivedQuantity) : undefined;
+    if (quantity !== undefined && (!Number.isInteger(quantity) || quantity < 1 || quantity > data.quantity)) {
+      toast.push(`Received quantity must be a whole number between 1 and ${data.quantity}.`, "error");
+      return;
+    }
+    setReceiptBusy(true);
+    try {
+      const body: Record<string, unknown> = { decision: receiptDecision, notes: receiptNotes.trim() };
+      if (quantity !== undefined) body.quantity_received = quantity;
+      await api.post(`/purchase-requests/${data.id}/receipt`, body);
+      toast.push(
+        receiptDecision === "confirmed"
+          ? "Receipt confirmed. This decision is terminal and audited."
+          : "Dispute recorded. This decision is terminal and audited.",
+        receiptDecision === "confirmed" ? "success" : "info",
+      );
+      setReceiptNotes("");
+      setReceivedQuantity("");
+      reload();
+    } catch (err) {
+      toast.push(err instanceof Error ? err.message : "Receipt could not be recorded.", "error");
+    } finally {
+      setReceiptBusy(false);
+    }
+  };
+
+  const segmented = (active: boolean) =>
+    `rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+      active
+        ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
+        : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]"
+    }`;
+
+  const sections: PageSectionMeta[] = [
+    { id: "decision", label: "Decision", hint: "The engine's checks, outcome and stored reason." },
+    ...(canReview ? [{ id: "review", label: "Human review", hint: "Resolve this escalation with logged notes." }] : []),
+    { id: "fulfilment", label: "Fulfilment", hint: "Dispatch, delivery and the organisation's receipt." },
+    { id: "advisory", label: "AI advisory", hint: "Advisory assessments that can only escalate, never approve." },
+    { id: "evidence", label: "Evidence", hint: "Payment and delivery records kept separate from invoices." },
+    { id: "summary", label: "Financials", hint: "Amount, allocation, payment, vendor and project." },
+  ];
+  const nextAction = canReview
+    ? "This request was escalated. Review the checks, then approve or reject with recorded notes — approval re-validates every hard pre-condition first."
+    : data.status === "authorised" && canPay
+      ? "Funds are reserved. Settle the simulated payment to the vendor's verified payout reference to move this request forward."
+      : data.status === "paid" && canReportDelivery
+        ? "Report dispatch and delivery so the organisation can confirm receipt."
+        : data.status === "paid" && canConfirmReceipt
+          ? "The supplier reported delivery. Confirm receipt or raise a dispute; either outcome is recorded as evidence."
+          : decision
+            ? `This request is ${titleCase(data.status)}. Follow the sections below for the full decision and evidence trail.`
+            : "The engine has not evaluated this request yet.";
+
   return (
     <>
       <PageHeader
@@ -170,11 +287,29 @@ export default function PurchaseDetail() {
         {decision?.policy_version ? <span className="chip">Policy v{decision.policy_version}</span> : null}
         {data.quotation_reference ? <span className="chip font-mono">Quote {data.quotation_reference}</span> : null}
         {data.payment?.simulated ? <SimulatedBadge /> : null}
+        {delivery ? (
+          <span className="chip flex items-center gap-1.5">
+            Delivery <StatusBadge status={delivery.status} />
+          </span>
+        ) : null}
       </div>
+
+      <PageOverview
+        intro={
+          <>
+            This is the complete record of one purchase request: the deterministic decision and its eleven checks, any
+            human review, the payment to the supplier, and the delivery and receipt evidence. Records are append-only —
+            each step adds an event instead of rewriting history.
+          </>
+        }
+        nextAction={nextAction}
+        sections={sections}
+      />
+      <SectionNav sections={sections} />
 
       <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="space-y-5">
-          <section className="panel p-5 sm:p-6">
+          <section id="decision" className="panel scroll-mt-28 p-5 sm:p-6">
             <SectionHeading
               eyebrow="Deterministic engine"
               title="Authorization decision"
@@ -226,7 +361,7 @@ export default function PurchaseDetail() {
           </section>
 
           {canReview ? (
-            <section className="panel p-5 sm:p-6">
+            <section id="review" className="panel scroll-mt-28 p-5 sm:p-6">
               <SectionHeading
                 eyebrow="Human review"
                 title="Resolve this escalation"
@@ -271,7 +406,246 @@ export default function PurchaseDetail() {
             </section>
           ) : null}
 
-          <section className="panel p-5 sm:p-6">
+          <section id="fulfilment" className="panel scroll-mt-28 p-5 sm:p-6">
+            <SectionHeading
+              eyebrow="Fulfilment"
+              title="Delivery and receipt"
+              description="Payment is not proof of delivery. The vendor reports dispatch and delivery; only the owning organisation can confirm or dispute receipt."
+            />
+
+            {delivery ? (
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">{titleCase(delivery.status)}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Reported {formatDate(delivery.reported_at)} · dispatch ref{" "}
+                      <span className="font-mono text-slate-400">{delivery.dispatch_reference}</span>
+                    </p>
+                  </div>
+                  <StatusBadge status={delivery.status} />
+                </div>
+                <dl className="mt-4 grid gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Dispatched at</dt>
+                    <dd className="text-slate-300">{formatDate(delivery.dispatched_at)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Delivered at</dt>
+                    <dd className="text-slate-300">{formatDate(delivery.delivered_at)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Quantity reported</dt>
+                    <dd className="font-mono text-slate-300">
+                      {delivery.quantity_reported ?? "—"} of {data.quantity}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Quantity received</dt>
+                    <dd className="font-mono text-slate-300">{delivery.quantity_received ?? "—"}</dd>
+                  </div>
+                </dl>
+                {delivery.notes ? (
+                  <p className="mt-3 rounded-lg border border-white/[0.05] bg-navy-950/40 p-3 text-xs leading-relaxed text-slate-400">
+                    <span className="text-slate-500">Vendor notes: </span>
+                    {delivery.notes}
+                  </p>
+                ) : null}
+                {delivery.receipt_notes ? (
+                  <p className="mt-2 rounded-lg border border-white/[0.05] bg-navy-950/40 p-3 text-xs leading-relaxed text-slate-400">
+                    <span className="text-slate-500">Organisation notes: </span>
+                    {delivery.receipt_notes}
+                  </p>
+                ) : null}
+                {delivery.receipt_confirmed_at ? (
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    Receipt {delivery.acknowledged ? "confirmed" : "disputed"} on{" "}
+                    {formatDate(delivery.receipt_confirmed_at)}.
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <EmptyState
+                icon={Truck}
+                title={data.status === "paid" ? "No delivery reported yet" : "Delivery opens after settlement"}
+                description={
+                  data.status === "paid"
+                    ? "The vendor reports dispatch and delivery against this settled purchase."
+                    : "Only a settled purchase can move through dispatch, delivery and receipt."
+                }
+              />
+            )}
+
+            {canReportDelivery ? (
+              <div className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Vendor delivery report</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                  Reporting against {data.quantity} ordered units. Report dispatch first, delivery later — or both at once.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMode("dispatch")}
+                    className={segmented(deliveryMode === "dispatch")}
+                  >
+                    Dispatched only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMode("delivered")}
+                    className={segmented(deliveryMode === "delivered")}
+                  >
+                    Mark delivered
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="label" htmlFor="dispatch-reference">Dispatch reference</label>
+                    <input
+                      id="dispatch-reference"
+                      className="input"
+                      value={dispatchReference}
+                      onChange={(event) => setDispatchReference(event.target.value)}
+                      placeholder="Consignment / tracking number"
+                      maxLength={160}
+                    />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor="reported-quantity">Quantity reported (optional)</label>
+                    <input
+                      id="reported-quantity"
+                      type="number"
+                      min={1}
+                      max={data.quantity}
+                      className="input"
+                      value={reportedQuantity}
+                      onChange={(event) => setReportedQuantity(event.target.value)}
+                      placeholder={`${data.quantity} (ordered)`}
+                    />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor="dispatched-at">Dispatched at</label>
+                    <input
+                      id="dispatched-at"
+                      type="datetime-local"
+                      className="input"
+                      value={dispatchedAt}
+                      onChange={(event) => setDispatchedAt(event.target.value)}
+                    />
+                  </div>
+                  {deliveryMode === "delivered" ? (
+                    <div>
+                      <label className="label" htmlFor="delivered-at">Delivered at</label>
+                      <input
+                        id="delivered-at"
+                        type="datetime-local"
+                        className="input"
+                        value={deliveredAt}
+                        onChange={(event) => setDeliveredAt(event.target.value)}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-3">
+                  <label className="label" htmlFor="delivery-notes">Notes (optional)</label>
+                  <textarea
+                    id="delivery-notes"
+                    className="input min-h-[80px] resize-y"
+                    value={deliveryNotes}
+                    onChange={(event) => setDeliveryNotes(event.target.value)}
+                    placeholder="Carrier, condition on arrival, partial shipment details."
+                  />
+                </div>
+                <button className="btn-primary mt-3 w-full" onClick={reportDelivery} disabled={deliveryBusy}>
+                  {deliveryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
+                  {deliveryMode === "delivered" ? "Report delivery" : "Report dispatch"}
+                </button>
+                <p className="mt-2 text-center text-[10px] leading-relaxed text-slate-600">
+                  A vendor report is evidence, not independent proof of delivery. Reported quantity cannot exceed the order.
+                </p>
+              </div>
+            ) : null}
+
+            {canConfirmReceipt ? (
+              <div className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Receipt decision</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                  Record what actually arrived. A dispute requires notes and affects the vendor&rsquo;s derived delivery performance.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReceiptDecision("confirmed")}
+                    className={segmented(receiptDecision === "confirmed")}
+                  >
+                    Receipt confirmed
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptDecision("disputed")}
+                    className={segmented(receiptDecision === "disputed")}
+                  >
+                    Dispute delivery
+                  </button>
+                </div>
+                <div className="mt-3">
+                  <label className="label" htmlFor="received-quantity">Quantity received (optional)</label>
+                  <input
+                    id="received-quantity"
+                    type="number"
+                    min={1}
+                    max={data.quantity}
+                    className="input"
+                    value={receivedQuantity}
+                    onChange={(event) => setReceivedQuantity(event.target.value)}
+                    placeholder={`${delivery?.quantity_reported ?? data.quantity} reported by vendor`}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="label" htmlFor="receipt-notes">
+                    Notes {receiptDecision === "disputed" ? "(required, minimum 10 characters)" : "(optional)"}
+                  </label>
+                  <textarea
+                    id="receipt-notes"
+                    className="input min-h-[80px] resize-y"
+                    value={receiptNotes}
+                    onChange={(event) => setReceiptNotes(event.target.value)}
+                    placeholder={
+                      receiptDecision === "disputed"
+                        ? "What was wrong: shortfall, damage, wrong items, missing documents."
+                        : "Condition on receipt, who accepted delivery, any follow-up."
+                    }
+                  />
+                </div>
+                <button
+                  className={`${receiptDecision === "confirmed" ? "btn-primary" : "btn-danger"} mt-3 w-full`}
+                  onClick={recordReceipt}
+                  disabled={receiptBusy}
+                >
+                  {receiptBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : receiptDecision === "confirmed" ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <XCircle className="h-4 w-4" />
+                  )}
+                  {receiptDecision === "confirmed" ? "Confirm receipt" : "Record dispute"}
+                </button>
+                <p className="mt-2 text-center text-[10px] leading-relaxed text-slate-600">
+                  Receipt decisions are terminal in this prototype.
+                </p>
+              </div>
+            ) : null}
+
+            <div className="mt-3">
+              <InfoNote tone={delivery?.status === "disputed" ? "amber" : "neutral"}>
+                An invoice or vendor report is evidence, not proof of delivery. Only the owning organisation can acknowledge
+                receipt, and every transition is written to the append-only audit trail.
+              </InfoNote>
+            </div>
+          </section>
+
+          <section id="advisory" className="panel scroll-mt-28 p-5 sm:p-6">
             <SectionHeading
               eyebrow="Advisory layer"
               title="AI assessments"
@@ -361,7 +735,7 @@ export default function PurchaseDetail() {
             </div>
           </section>
 
-          <section className="panel p-5 sm:p-6">
+          <section id="evidence" className="panel scroll-mt-28 p-5 sm:p-6">
             <SectionHeading
               eyebrow="Evidence"
               title="Payment and delivery records"
@@ -407,7 +781,7 @@ export default function PurchaseDetail() {
         </div>
 
         <aside className="space-y-5">
-          <section className="panel p-5">
+          <section id="summary" className="panel scroll-mt-28 p-5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Financial summary</p>
             <p className="mt-2 font-mono text-2xl text-white">{money(data.total_amount_minor, data.currency)}</p>
             <dl className="mt-4 space-y-2.5 text-xs">

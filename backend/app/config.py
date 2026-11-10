@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     access_token_minutes: int = 12 * 60
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # Payments. "simulated" is the only mode exercised by tests and demos.
+    # "paypal" requires credentials and is never selected implicitly.
+    payments_provider: str = "simulated"
+    paypal_client_id: str = ""
+    paypal_client_secret: str = ""
+    paypal_mode: str = "sandbox"
+    paypal_webhook_id: str = ""
+
     # AI is advisory only. Without a key every AI service reports that it is unavailable
     # rather than returning fabricated output.
     ai_api_key: str = ""
@@ -31,6 +39,10 @@ class Settings(BaseSettings):
     @property
     def ai_enabled(self) -> bool:
         return bool(self.ai_api_key.strip())
+
+    @property
+    def paypal_configured(self) -> bool:
+        return bool(self.paypal_client_id.strip() and self.paypal_client_secret.strip())
 
 
 @lru_cache
